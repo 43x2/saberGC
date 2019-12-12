@@ -3,9 +3,11 @@
 **saberGC** is a prototype of garbage collection system in C++.
 
 ## Features
-- Naïve mark-and-sweep garbage collection.
-- Custom allocator/deallocator with alignment support.
+- Naïve mark-and-sweep and *exact* garbage collection.
+- Custom allocator/deallocator support.
 - `shared_ptr`/`unique_ptr`-like interface.
+- Not a singleton.
+  - You can use multiple systems if necessary.
 
 ## Requirements
 - C++14 (MSVC, clang, gcc, etc.)
@@ -33,5 +35,6 @@ int main()
 ```
 
 ## ToDos
+- Move semantics support.
 - Array type construction support.
 - Exception safety support.
