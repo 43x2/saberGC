@@ -2,9 +2,11 @@
 #pragma once
 
 #include <cstddef>
-#include <functional>
 #include <memory>
+#include <memory_resource>
+#include <type_traits>
 #include <utility>
+#include <variant>
 
 
 namespace saber {
@@ -13,122 +15,132 @@ class GC
 {
 public:
 	template <class T> class Object;
-	class Impl;
-private:
-	class BaseObject;
 
 public:
-	using allocator_type = std::function<void*(const std::size_t size, const std::size_t alignment)>;
-	using deallocator_type = std::function<void(void* pointer)>;
-
-public:
-	GC();
-	GC(allocator_type allocator, deallocator_type deallocator);
-	GC(const GC&) = delete;
-	GC(GC&&);
+	explicit GC(std::pmr::memory_resource* resource = nullptr);
+	GC(GC&&) noexcept;
 	~GC();
-	GC& operator=(const GC&) = delete;
-	GC& operator=(GC&&);
+	GC& operator=(GC&&) noexcept;
 
 	// Allocates and constructs a new object.
 	template <class T, class... Args> Object<T> new_object(Args&&... args);
 
-	// Destructs and deallocates no longer used objects explicitly.
+	// Destructs and deallocates unreferenced objects explicitly.
 	void collect();
 
 private:
-	void* allocate(const std::size_t size, const std::size_t alignment);
-	template <class T> static void destruct(void* pointer);
+	class BaseObject;
+	class Impl;
 
 private:
-	std::unique_ptr<Impl, std::function<void(Impl*)>> impl_;
+	std::shared_ptr<Impl> impl_;
 };
 
 class GC::BaseObject
 {
-	template <class T> friend class Object;
-
-private:
-	BaseObject();
-	BaseObject(GC::Impl* impl, void* allocated, const std::size_t size, void(*destructor)(void*));
+public:
+	BaseObject() noexcept;
+	BaseObject(const std::shared_ptr<Impl>& impl, const std::size_t bytes, const std::size_t alignment);
 	BaseObject(const BaseObject& other);
 	~BaseObject();
 	BaseObject& operator=(const BaseObject& rhs);
 
+	void set_destructor(void(*destructor)(void*));
+	void reset();
+
+protected:
+	void* storage_;
+
 private:
-	GC::Impl* impl_;
+	std::variant<std::shared_ptr<Impl>, std::weak_ptr<Impl>> impl_;
 };
 
 template <class T>
-class GC::Object : private GC::BaseObject
+class GC::Object : protected GC::BaseObject
 {
 	friend GC;
 
 public:
-	Object() = default;
+	Object() noexcept = default;
 	Object(const Object&) = default;
 	~Object() = default;
-	Object& operator=(const Object& rhs);
+	Object& operator=(const Object&) = default;
 
-	T* get() const;
-	T& operator*() const;
-	T* operator->() const;
+	// Returns the pointer of storage.
+	T* get() const noexcept;
+
+	// Returns the pointer of storage for accessing members.
+	T* operator->() const noexcept;
+
+	// Dereferences the pointer of storage.
+	T& operator*() const noexcept;
+
+	// Checks if the pointer is not null.
+	explicit operator bool() const noexcept;
+
+	// Releases the ownership.
+	void reset();
 
 private:
-	template <class... Args> Object(void* allocated, GC::Impl* impl, Args&&... args);
-
-private:
-	T* instance_{ nullptr };
+	template <class... Args> Object(const std::shared_ptr<Impl>& impl, Args&&... args);
+	static void destruct(void* p);
 };
 
 
 template <class T, class... Args>
 GC::Object<T> GC::new_object(Args&&... args)
 {
-	return Object<T>(allocate(sizeof(T), alignof(T)), impl_.get(), std::forward<Args>(args)...);
+	return { impl_, std::forward<Args>(args)... };
 }
 
+
 template <class T>
-void GC::destruct(void* pointer)
+T* GC::Object<T>::get() const noexcept
 {
-	if (pointer) {
-		static_cast<T*>(pointer)->~T();
-	}
-}
-
-
-template <class T>
-GC::Object<T>& GC::Object<T>::operator=(const Object& rhs)
-{
-	BaseObject::operator=(rhs);
-	instance_ = rhs.instance_;
-	return *this;
+	return static_cast<T*>(storage_);
 }
 
 template <class T>
-T* GC::Object<T>::get() const
-{
-	return instance_;
-}
-
-template <class T>
-T& GC::Object<T>::operator*() const
-{
-	return *get();
-}
-
-template <class T>
-T* GC::Object<T>::operator->() const
+T* GC::Object<T>::operator->() const noexcept
 {
 	return get();
 }
 
 template <class T>
-template <class... Args>
-GC::Object<T>::Object(void* allocated, GC::Impl* impl, Args&&... args)
-	: BaseObject(impl, allocated, sizeof(T), &destruct<T>)
-	, instance_{ new (allocated) T(std::forward<Args>(args)...) }
+T& GC::Object<T>::operator*() const noexcept
 {
+	return *get();
+}
+
+template <class T>
+GC::Object<T>::operator bool() const noexcept
+{
+	return get() != nullptr;
+}
+
+template <class T>
+void GC::Object<T>::reset()
+{
+	BaseObject::reset();
+}
+
+template <class T>
+template <class... Args>
+GC::Object<T>::Object(const std::shared_ptr<Impl>& impl, Args&&... args)
+	: BaseObject{ impl, sizeof(T), alignof(T) }
+{
+	new (storage_) T{ std::forward<Args>(args)... };
+	set_destructor(&destruct);
+}
+
+template <class T>
+void GC::Object<T>::destruct(void* p)
+{
+	if constexpr (!std::is_trivially_destructible_v<T>) {
+		if (p) {
+			static_cast<T*>(p)->~T();
+		}
+	}
 }
 
 } // namespace saber

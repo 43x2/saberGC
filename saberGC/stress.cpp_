@@ -1,0 +1,119 @@
+﻿
+#include <new>
+#include <random>
+#include <thread>
+#include <vector>
+#include "saber/GC.h"
+
+#define USE_MEMORY_RESOURCE
+
+
+#if defined(USE_MEMORY_RESOURCE)
+class TestMemoryResource : public std::pmr::memory_resource
+{
+public:
+	void* do_allocate(const std::size_t bytes, const std::size_t alignment) override
+	{
+		return operator new(bytes, std::align_val_t{ alignment });
+	}
+
+	void do_deallocate(void* p, const std::size_t bytes, const std::size_t alignment) override
+	{
+		operator delete(p, bytes, std::align_val_t{ alignment });
+	}
+
+	bool do_is_equal(const std::pmr::memory_resource&) const noexcept override
+	{
+		return true;
+	}
+};
+#endif // defined(USE_MEMORY_RESOURCE)
+
+struct Test
+{
+	saber::GC::Object<Test> t;
+};
+
+
+int main()
+{
+	constexpr std::size_t NUMBER_OF_THREADS = 4;
+
+#if defined(USE_MEMORY_RESOURCE)
+	TestMemoryResource tmr;
+#endif // defined(USE_MEMORY_RESOURCE)
+
+	std::vector<std::thread> threads;
+	for (auto i = decltype(NUMBER_OF_THREADS){ 0 }; i < NUMBER_OF_THREADS; ++i) {
+		threads.emplace_back([]([[maybe_unused]] std::pmr::memory_resource* resource) {
+			constexpr std::size_t NUMBER_OF_INSTANCES  = 1;
+			constexpr std::size_t NUMBER_OF_OBJECTS    = 1024;
+			constexpr std::size_t NUMBER_OF_OPERATIONS = 100000;
+
+			// Creates a random number engine and distributions.
+			std::random_device rd;
+			std::mt19937_64 engine{ rd() };
+			std::uniform_int_distribution<int>         dopr{ 0, 3 };
+			std::uniform_int_distribution<std::size_t> dins{ 0, NUMBER_OF_INSTANCES - 1 };
+			std::uniform_int_distribution<std::size_t> dobj{ 0, NUMBER_OF_OBJECTS - 1 };
+			std::uniform_int_distribution<int>         dbin{ 0, 1 };
+
+			// Creates GC instances.
+			std::vector<std::shared_ptr<saber::GC>> instances;
+			for (auto i = decltype(NUMBER_OF_INSTANCES){ 0 }; i < NUMBER_OF_INSTANCES; ++i) {
+#if defined(USE_MEMORY_RESOURCE)
+				instances.push_back(std::allocate_shared<saber::GC>(std::pmr::polymorphic_allocator<saber::GC>{ resource }, resource));
+#else // defined(USE_MEMORY_RESOURCE)
+				instances.push_back(std::make_shared<saber::GC>());
+#endif // defined(USE_MEMORY_RESOURCE)
+			}
+
+			// Creates empty objects.
+			std::vector<saber::GC::Object<Test>> objects{ NUMBER_OF_OBJECTS };
+
+			// Performs random operations.
+			for (auto op = decltype(NUMBER_OF_OPERATIONS){ 0 }; op < NUMBER_OF_OPERATIONS; ++op) {
+				switch (dopr(engine)) {
+				case 0: // new_object
+					{
+						auto o = dobj(engine);
+						(objects[o] && dbin(engine) ? objects[o]->t : objects[o]) = instances[dins(engine)]->new_object<Test>();
+					}
+					break;
+
+				case 1: // collect
+					instances[dins(engine)]->collect();
+					break;
+
+				case 2: // copy
+					{
+						auto to   = dobj(engine);
+						auto from = dobj(engine);
+						(objects[to] && dbin(engine) ? objects[to]->t : objects[to]) = (objects[from] && dbin(engine) ? objects[from]->t : objects[from]);
+					}
+					break;
+
+				case 3: // reset
+					{
+						auto o = dobj(engine);
+						(objects[o] && dbin(engine) ? objects[o]->t : objects[o]).reset();
+					}
+					break;
+
+				default:
+					break;
+				}
+			}
+		},
+#if defined(USE_MEMORY_RESOURCE)
+		&tmr);
+#else // defined(USE_MEMORY_RESOURCE)
+		nullptr);
+#endif // defined(USE_MEMORY_RESOURCE)
+	}
+
+	for (auto&& thread : threads) {
+		thread.join();
+	}
+	return 0;
+}

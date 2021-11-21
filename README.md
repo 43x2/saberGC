@@ -4,37 +4,32 @@
 
 ## Features
 - Naïve mark-and-sweep and *exact* garbage collection.
-- Custom allocator/deallocator support.
 - `shared_ptr`/`unique_ptr`-like interface.
-- Not a singleton.
-  - You can use multiple systems if necessary.
+- Custom `memory_resource` support.
+- Not a singleton and no global variables.
+	- There can be multiple GC instances if necessary.
 
 ## Requirements
-- C++14 (MSVC, clang, gcc, etc.)
+- C++17 (clang, MSVC, gcc, etc.)
+	- e.g. `memory_resource`, `polymorphic_allocator`, `variant`, `[[maybe_unused]]`
 
 ## Usage
 ```cpp
 struct Foo
 {
-    saber::GC::Object<int> int_;
-    saber::GC::Object<Foo> foo_;
-
-    Foo(std::unique_ptr<saber::GC>& gc)
-        : int_{ gc->new_object<int>(42) }
-    {
-    }
+	saber::GC::Object<Foo> foo_;
 };
 
 int main()
 {
-    auto gc = std::make_unique<saber::GC>();
-    auto foo = gc->new_object<Foo>(gc);
-    foo->foo_ = foo; // cyclic reference!
-    return 0;
-} // collects garbages implicitly when destruction.
+	saber::GC gc;
+
+	auto foo = gc.new_object<Foo>();
+	foo->foo_ = foo; // It's a cyclic reference, but no problem.
+
+	return 0;
+} // saber::GC collects garbages implicitly when destroyed.
 ```
 
 ## ToDos
-- Move semantics support.
 - Array type construction support.
-- Exception safety support.

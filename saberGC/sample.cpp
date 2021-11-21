@@ -1,51 +1,64 @@
 ﻿
-#include <memory>
-#include <utility>
+#include <iostream>
+#include <new>
 #include "saber/GC.h"
 
+#define USE_MEMORY_RESOURCE
 
-struct B;
 
-struct A
+#if defined(USE_MEMORY_RESOURCE)
+class TestMemoryResource : public std::pmr::memory_resource
 {
-	saber::GC::Object<B> a0;
-
-	A(std::unique_ptr<saber::GC>& gc)
-		: a0{ gc->new_object<B>(gc) }
+private:
+	void* do_allocate(const std::size_t bytes, const std::size_t alignment) override
 	{
+		auto p = operator new(bytes, std::align_val_t{ alignment });
+		std::clog << "do_allocate(bytes: " << bytes << ", alignment: " << alignment << ") returns " << p << "\n";
+		return p;
+	}
+
+	void do_deallocate(void* p, const std::size_t bytes, const std::size_t alignment) override
+	{
+		std::clog << "do_deallocate(p: " << p << ", bytes: " << bytes << ", alignment: " << alignment << ")\n";
+		operator delete(p, bytes, std::align_val_t{ alignment });
+	}
+
+	bool do_is_equal(const std::pmr::memory_resource&) const noexcept override
+	{
+		std::clog << "do_is_equal(...)\n";
+		return true;
 	}
 };
+#endif // defined(USE_MEMORY_RESOURCE)
 
-struct B
+
+struct Foo
 {
-	saber::GC::Object<int> b0;
-	saber::GC::Object<A> b1;
+	saber::GC::Object<Foo> foo_;
 
-	B(std::unique_ptr<saber::GC>& gc)
-		: b0{ gc->new_object<int>(42) }
+	Foo()
 	{
+		std::cout << "Foo\n";
+	}
+
+	~Foo()
+	{
+		std::cout << "~Foo\n";
 	}
 };
 
 
 int main()
 {
-	auto gc = std::make_unique<saber::GC>();
-	{
-		auto obj0 = gc->new_object<A>(gc);
-		auto obj1 = obj0;
-		auto obj2 = std::move(obj1);
+#if defined(USE_MEMORY_RESOURCE)
+	TestMemoryResource tmr;
+	saber::GC gc{ &tmr };
+#else // defined(USE_MEMORY_RESOURCE)
+	saber::GC gc;
+#endif // defined(USE_MEMORY_RESOURCE)
 
-		obj0->a0->b1 = obj0;
+	auto foo = gc.new_object<Foo>();
+	foo->foo_ = foo; // It's a cyclic reference, but no problem.
 
-		saber::GC::Object<A> obj3, obj4;
-		obj3 = obj0;
-		obj4 = std::move(obj2);
-		obj3 = obj4;
-
-		auto obj5 = gc->new_object<int>(334);
-		obj0->a0->b0 = std::move(obj5);
-	}
-	gc->collect();
 	return 0;
-}
+} // saber::GC collects garbages implicitly when destroyed.

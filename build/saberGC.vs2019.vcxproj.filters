@@ -18,8 +18,14 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\saberGC\sample.cpp" />
-    <ClCompile Include="..\saberGC\src\GC.impl.cpp">
+    <ClCompile Include="..\saberGC\src\GC.cpp">
       <Filter>src</Filter>
     </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\saberGC\stress.cpp_" />
+  </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="..\saberGC\saberGC.natvis" />
   </ItemGroup>
 </Project>

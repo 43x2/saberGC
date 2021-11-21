@@ -1,9 +1,9 @@
 
-WINDOWS_SDK_VERSION = "10.0.17763.0"
-
 function AddGlobalSettings()
 	language("C++")
-	cppdialect("C++14")
+	cppdialect("C++17")
+--	exceptionhandling("Off")  -- if desired
+--	rtti("Off")               -- if desired
 	warnings("Extra")
 	flags({
 		"MultiProcessorCompile",
@@ -13,7 +13,6 @@ end
 function AddWindowsSettings()
 	-- x86/x64
 	filter({"platforms:x86 or x64"})
-		systemversion(WINDOWS_SDK_VERSION)
 
 	-- x86
 	filter({"platforms:x86"})
@@ -26,6 +25,9 @@ end
 
 function AddDebugSettings()
 	filter({"configurations:Debug"})
+		defines({
+			"_DEBUG",
+		})
 		optimize("Off")
 		symbols("On")
 	filter({})
@@ -33,6 +35,9 @@ end
 
 function AddDevelopSettings()
 	filter({"configurations:Develop"})
+		defines({
+			"NDEBUG",
+		})
 		optimize("Speed")
 		runtime("Debug")
 		symbols("On")
@@ -41,6 +46,9 @@ end
 
 function AddReleaseSettings()
 	filter({"configurations:Release"})
+		defines({
+			"NDEBUG",
+		})
 		optimize("Full")
 		symbols("Off")
 		flags({

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+	<Type Name="saber::GC::Object&lt;*&gt;">
+		<DisplayString Condition="storage_ == nullptr">empty</DisplayString>
+		<DisplayString>Object&lt;{"$T1",sb}&gt; {*($T1*)storage_}</DisplayString>
+		<Expand>
+			<Item Name="[ptr]" Condition="storage_ != nullptr">($T1*)storage_</Item>
+		</Expand>
+	</Type>
+</AutoVisualizer>
