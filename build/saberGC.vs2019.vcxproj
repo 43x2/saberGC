@@ -271,6 +271,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\saberGC\stress.cpp_" />
+    <None Include="..\saberGC\test.cpp_" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="..\saberGC\saberGC.natvis" />

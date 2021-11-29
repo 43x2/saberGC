@@ -32,4 +32,5 @@ int main()
 ```
 
 ## ToDos
-- Array type construction support.
+- Copy construction/assignment support from `Object<Derived>`.
+- Benchmarking.

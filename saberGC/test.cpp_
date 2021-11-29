@@ -1,0 +1,141 @@
+﻿
+#include <iostream>
+#include <new>
+#include "saber/GC.h"
+
+#define USE_MEMORY_RESOURCE
+
+
+#if defined(USE_MEMORY_RESOURCE)
+class TestMemoryResource : public std::pmr::memory_resource
+{
+private:
+	void* do_allocate(const std::size_t bytes, const std::size_t alignment) override
+	{
+		auto p = operator new(bytes, std::align_val_t{ alignment });
+		std::clog << "do_allocate(bytes: " << bytes << ", alignment: " << alignment << ") returns " << p << "\n";
+		return p;
+	}
+
+	void do_deallocate(void* p, const std::size_t bytes, const std::size_t alignment) override
+	{
+		std::clog << "do_deallocate(p: " << p << ", bytes: " << bytes << ", alignment: " << alignment << ")\n";
+		operator delete(p, bytes, std::align_val_t{ alignment });
+	}
+
+	bool do_is_equal(const std::pmr::memory_resource&) const noexcept override
+	{
+		std::clog << "do_is_equal(...)\n";
+		return true;
+	}
+};
+#endif // defined(USE_MEMORY_RESOURCE)
+
+struct Foo
+{
+	saber::GC::Object<Foo> foo_;
+
+	Foo()
+	{
+		std::cout << "Foo\n";
+	}
+
+	~Foo()
+	{
+		std::cout << "~Foo\n";
+	}
+};
+
+
+int main()
+{
+#if defined(USE_MEMORY_RESOURCE)
+	TestMemoryResource tmr;
+	saber::GC gc{ &tmr };
+#else // defined(USE_MEMORY_RESOURCE)
+	saber::GC gc;
+#endif // defined(USE_MEMORY_RESOURCE)
+
+//	saber::GC::Object<void> obj0;
+	saber::GC::Object<int> obj1;
+	saber::GC::Object<int[]> obj2;
+//	saber::GC::Object<int[3]> obj3;
+	saber::GC::Object<int[][3]> obj4;
+
+//	auto obj5  = gc.new_object<void>();
+	auto obj6  = gc.new_object<int>();
+//	auto obj7  = gc.new_object<int[]>();
+//	auto obj8  = gc.new_object<int[3]>();
+//	auto obj9  = gc.new_object<int[][3]>();
+
+//	auto obj10 = gc.new_array<void>(3);
+//	auto obj11 = gc.new_array<int>(3);
+	auto obj12 = gc.new_array<int[]>(3);
+//	auto obj13 = gc.new_array<int[3]>(3);
+	auto obj14 = gc.new_array<int[][3]>(3);
+
+	auto p1  = obj1.get();
+	auto p2  = obj2.get();
+	auto p4  = obj4.get();
+	auto p6  = obj6.get();
+	auto p12 = obj12.get();
+	auto p14 = obj14.get();
+	static_assert(std::is_same_v<decltype(p1),  int*>);
+	static_assert(std::is_same_v<decltype(p2),  int*>);
+	static_assert(std::is_same_v<decltype(p4),  int(*)[3]>);
+	static_assert(std::is_same_v<decltype(p6),  int*>);
+	static_assert(std::is_same_v<decltype(p12), int*>);
+	static_assert(std::is_same_v<decltype(p14), int(*)[3]>);
+
+	auto q1 = obj1.operator->();
+	auto q6 = obj6.operator->();
+	static_assert(std::is_same_v<decltype(q1), int*>);
+	static_assert(std::is_same_v<decltype(q6), int*>);
+
+	auto&& r1 = obj1.operator*();
+	auto&& r6 = obj6.operator*();
+	static_assert(std::is_same_v<decltype(r1), int&>);
+	static_assert(std::is_same_v<decltype(r6), int&>);
+
+	auto&& s2  = obj2.operator[](0);
+	auto&& s4  = obj4.operator[](0);
+	auto&& s12 = obj12.operator[](0);
+	auto&& s14 = obj14.operator[](0);
+	static_assert(std::is_same_v<decltype(s2),  int&>);
+	static_assert(std::is_same_v<decltype(s4),  int(&)[3]>);
+	static_assert(std::is_same_v<decltype(s12), int&>);
+	static_assert(std::is_same_v<decltype(s14), int(&)[3]>);
+	obj12[0] = 1;
+	obj12[1] = 2;
+	obj12[2] = 3;
+
+	auto t1  = !obj1;
+	auto t2  = !obj2;
+	auto t4  = !obj4;
+	auto t6  = !obj6;
+	auto t12 = !obj12;
+	auto t14 = !obj14;
+	static_assert(std::is_same_v<decltype(t1),  bool>);
+	static_assert(std::is_same_v<decltype(t2),  bool>);
+	static_assert(std::is_same_v<decltype(t4),  bool>);
+	static_assert(std::is_same_v<decltype(t6),  bool>);
+	static_assert(std::is_same_v<decltype(t12), bool>);
+	static_assert(std::is_same_v<decltype(t14), bool>);
+
+	obj1.reset();
+	obj2.reset();
+	obj4.reset();
+	obj6.reset();
+	obj12.reset();
+	obj14.reset();
+
+	gc.collect();
+
+	auto f = gc.new_array<Foo[][2]>(3);
+	auto f11 = f[1][1];
+
+	auto foo = gc.new_object<Foo>();
+	foo->foo_ = foo; // It's a cyclic reference, but no problem.
+
+	return 0;
+} // saber::GC collects garbages implicitly when destroyed.

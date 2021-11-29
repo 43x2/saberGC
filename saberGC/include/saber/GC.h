@@ -11,6 +11,33 @@
 
 namespace saber {
 
+namespace emulated {
+
+// Emulation of C++20 std::is_unbounded_array
+template <class>
+struct is_unbounded_array : std::false_type {};
+template <class T>
+struct is_unbounded_array<T[]> : std::true_type {};
+template <class T>
+constexpr bool is_unbounded_array_v = is_unbounded_array<T>::value;
+
+// Emulation of C++20 std::destroy_at
+template <class T>
+constexpr void destroy_at(T* p)
+{
+	if constexpr (std::is_array_v<T>) {
+		for (auto&& e : *p) {
+			destroy_at(std::addressof(e));
+		}
+	}
+	else {
+		p->~T();
+	}
+}
+
+} // namespace emulated
+
+
 class GC
 {
 public:
@@ -23,7 +50,12 @@ public:
 	GC& operator=(GC&&) noexcept;
 
 	// Allocates and constructs a new object.
-	template <class T, class... Args> Object<T> new_object(Args&&... args);
+	template <class T, class... Args>
+	std::enable_if_t<!std::is_array_v<T> && !std::is_void_v<T>, Object<T>> new_object(Args&&... args);
+
+	// Allocates and constructs a new array.
+	template <class T>
+	std::enable_if_t<emulated::is_unbounded_array_v<T>, Object<T>> new_array(const std::size_t count);
 
 	// Destructs and deallocates unreferenced objects explicitly.
 	void collect();
@@ -40,12 +72,12 @@ class GC::BaseObject
 {
 public:
 	BaseObject() noexcept;
-	BaseObject(const std::shared_ptr<Impl>& impl, const std::size_t bytes, const std::size_t alignment);
+	BaseObject(const std::shared_ptr<Impl>& impl, const std::size_t size, const std::size_t alignment, const std::size_t count);
 	BaseObject(const BaseObject& other);
 	~BaseObject();
 	BaseObject& operator=(const BaseObject& rhs);
 
-	void set_destructor(void(*destructor)(void*));
+	void set_destructor(void(*destructor)(void*, const std::size_t), const std::size_t count);
 	void reset();
 
 protected:
@@ -53,12 +85,18 @@ protected:
 
 private:
 	std::variant<std::shared_ptr<Impl>, std::weak_ptr<Impl>> impl_;
+	std::size_t count_;
 };
 
 template <class T>
 class GC::Object : protected GC::BaseObject
 {
+	static_assert(!std::is_array_v<T> && !std::is_void_v<T> || emulated::is_unbounded_array_v<T>);
+
 	friend GC;
+
+public:
+	using element_type = std::remove_extent_t<T>;
 
 public:
 	Object() noexcept = default;
@@ -67,80 +105,92 @@ public:
 	Object& operator=(const Object&) = default;
 
 	// Returns the pointer of storage.
-	T* get() const noexcept;
+	element_type* get() const noexcept
+	{
+		return static_cast<element_type*>(storage_);
+	}
 
 	// Returns the pointer of storage for accessing members.
-	T* operator->() const noexcept;
+	template <class U = T, class = std::enable_if_t<!std::is_array_v<U> && !std::is_void_v<U>>>
+	U* operator->() const noexcept
+	{
+		return get();
+	}
 
 	// Dereferences the pointer of storage.
-	T& operator*() const noexcept;
+	template <class U = T, class = std::enable_if_t<!std::is_array_v<U> && !std::is_void_v<U>>>
+	U& operator*() const noexcept
+	{
+		return *get();
+	}
+
+	// Returns the reference of nth element of the array in storage.
+	template <class U = T, class = std::enable_if_t<emulated::is_unbounded_array_v<U>>>
+	element_type& operator[](const std::ptrdiff_t index) const noexcept
+	{
+		return get()[index];
+	}
 
 	// Checks if the pointer is not null.
-	explicit operator bool() const noexcept;
+	explicit operator bool() const noexcept
+	{
+		return get() != nullptr;
+	}
 
 	// Releases the ownership.
-	void reset();
+	void reset()
+	{
+		BaseObject::reset();
+	}
 
 private:
-	template <class... Args> Object(const std::shared_ptr<Impl>& impl, Args&&... args);
-	static void destruct(void* p);
+	template <class U = T, std::enable_if_t<!std::is_array_v<U> && !std::is_void_v<U>, int> = 0, class... Args>
+	Object(const std::shared_ptr<Impl>& impl, Args&&... args);
+	template <class U = T, std::enable_if_t<emulated::is_unbounded_array_v<U>, int> = 0>
+	Object(const std::shared_ptr<Impl>& impl, const std::size_t count);
+
+	static void destruct(void* p, const std::size_t count)
+	{
+		if constexpr (!std::is_trivially_destructible_v<element_type>) {
+			if (p) {
+				for (auto i = decltype(count){ 0 }; i < count; ++i) {
+					emulated::destroy_at(static_cast<element_type*>(p) + i);
+				}
+			}
+		}
+	}
 };
 
 
 template <class T, class... Args>
-GC::Object<T> GC::new_object(Args&&... args)
+std::enable_if_t<!std::is_array_v<T> && !std::is_void_v<T>, GC::Object<T>> GC::new_object(Args&& ...args)
 {
 	return { impl_, std::forward<Args>(args)... };
 }
 
-
 template <class T>
-T* GC::Object<T>::get() const noexcept
+std::enable_if_t<emulated::is_unbounded_array_v<T>, GC::Object<T>> GC::new_array(const std::size_t count)
 {
-	return static_cast<T*>(storage_);
+	return { impl_, count };
 }
 
-template <class T>
-T* GC::Object<T>::operator->() const noexcept
-{
-	return get();
-}
 
 template <class T>
-T& GC::Object<T>::operator*() const noexcept
-{
-	return *get();
-}
-
-template <class T>
-GC::Object<T>::operator bool() const noexcept
-{
-	return get() != nullptr;
-}
-
-template <class T>
-void GC::Object<T>::reset()
-{
-	BaseObject::reset();
-}
-
-template <class T>
-template <class... Args>
+template <class U, std::enable_if_t<!std::is_array_v<U> && !std::is_void_v<U>, int>, class... Args>
 GC::Object<T>::Object(const std::shared_ptr<Impl>& impl, Args&&... args)
-	: BaseObject{ impl, sizeof(T), alignof(T) }
+	: BaseObject{ impl, sizeof(element_type), alignof(element_type), 0 }
 {
-	new (storage_) T{ std::forward<Args>(args)... };
-	set_destructor(&destruct);
+	storage_ = new (storage_) element_type{ std::forward<Args>(args)... };
+	set_destructor(&destruct, 0);
 }
 
 template <class T>
-void GC::Object<T>::destruct(void* p)
+template <class U, std::enable_if_t<emulated::is_unbounded_array_v<U>, int>>
+GC::Object<T>::Object(const std::shared_ptr<Impl>& impl, const std::size_t count)
+	: BaseObject{ impl, sizeof(element_type), alignof(element_type), count }
 {
-	if constexpr (!std::is_trivially_destructible_v<T>) {
-		if (p) {
-			static_cast<T*>(p)->~T();
-		}
-	}
+	storage_ = new (storage_) element_type[count] {};
+	set_destructor(&destruct, count);
 }
 
 } // namespace saber

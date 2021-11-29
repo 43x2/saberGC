@@ -31,7 +31,6 @@ private:
 };
 #endif // defined(USE_MEMORY_RESOURCE)
 
-
 struct Foo
 {
 	saber::GC::Object<Foo> foo_;

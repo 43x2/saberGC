@@ -2,9 +2,16 @@
 <AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
 	<Type Name="saber::GC::Object&lt;*&gt;">
 		<DisplayString Condition="storage_ == nullptr">empty</DisplayString>
-		<DisplayString>Object&lt;{"$T1",sb}&gt; {*($T1*)storage_}</DisplayString>
+		<DisplayString Condition="count_ == 0">Object&lt;{"$T1",sb}&gt; {*(saber::GC::Object&lt;$T1&gt;::element_type*)storage_}</DisplayString>
+		<DisplayString>Object&lt;{"$T1",sb}&gt; {{ size={count_} }}</DisplayString>
+
 		<Expand>
-			<Item Name="[ptr]" Condition="storage_ != nullptr">($T1*)storage_</Item>
+			<Item Name="[ptr]" Condition="storage_ != nullptr &amp;&amp; count_ == 0">(saber::GC::Object&lt;$T1&gt;::element_type*)storage_</Item>
+			<Item Name="[size]" Condition="storage_ != nullptr &amp;&amp; count_ &gt; 0">count_</Item>
+			<ArrayItems Condition="storage_ != nullptr &amp;&amp; count_ &gt; 0">
+				<Size>count_</Size>
+				<ValuePointer>(saber::GC::Object&lt;$T1&gt;::element_type*)storage_</ValuePointer>
+			</ArrayItems>
 		</Expand>
 	</Type>
 </AutoVisualizer>

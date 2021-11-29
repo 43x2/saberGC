@@ -10,9 +10,11 @@
 #if defined(__cpp_exceptions)
 #define SABER_GC_TRY        try
 #define SABER_GC_CATCH_ALL  catch (...)
+#define SABER_GC_RETHROW    throw
 #else // defined(__cpp_exceptions)
 #define SABER_GC_TRY        if constexpr (true)
 #define SABER_GC_CATCH_ALL  if constexpr (false)
+#define SABER_GC_RETHROW    static_cast<void>(0)
 #endif // defined(__cpp_exceptions)
 
 #if !defined(SABER_GC_ASSERT)
@@ -35,8 +37,8 @@ public:
 	void collect();
 
 	//	functions without lock
-	std::pair<void*, bool> new_object(const BaseObject* object, const std::size_t bytes, const std::size_t alignment);
-	void set_destructor(const void* storage, void(*destructor)(void*));
+	std::pair<void*, bool> new_object(const BaseObject* object, const std::size_t size, const std::size_t alignment, const std::size_t count);
+	void set_destructor(const void* storage, void(*destructor)(void*, const std::size_t));
 
 	//	functions with lock
 	std::unique_lock<std::mutex> lock();
@@ -67,7 +69,7 @@ private:
 class GC::Impl::Storage
 {
 public:
-	Storage(const std::size_t bytes, const std::size_t alignment, Impl* impl);
+	Storage(const std::size_t size, const std::size_t alignment, const std::size_t count, Impl* impl);
 	Storage(Storage&& other) noexcept;
 	~Storage();
 	Storage& operator=(const Storage&) = delete;
@@ -77,7 +79,7 @@ public:
 	std::size_t get_bytes() const noexcept;
 
 	//	functions with lock of Impl
-	void set_destructor(void(*destructor)(void*), const std::unique_lock<std::mutex>& locker) noexcept;
+	void set_destructor(void(*destructor)(void*, const std::size_t), const std::unique_lock<std::mutex>& locker) noexcept;
 	void add_child(const BaseObject* object, const std::unique_lock<std::mutex>& locker);
 	bool is_marked(const std::unique_lock<std::mutex>& locker) const noexcept;
 	void mark(const std::unique_lock<std::mutex>& locker);
@@ -85,9 +87,10 @@ public:
 
 private:
 	void* pointer_;
-	std::size_t bytes_;
+	std::size_t size_;
 	std::size_t alignment_;
-	void (*destructor_)(void*){ nullptr };
+	std::size_t count_;
+	void (*destructor_)(void*, const std::size_t){ nullptr };
 	Impl* impl_;
 
 	std::pmr::deque<const BaseObject*> child_objects_;
@@ -126,13 +129,8 @@ GC::Impl::Impl(std::pmr::memory_resource* resource)
 
 GC::Impl::~Impl()
 {
-	// There must be no root objects because a root object has a shared_ptr<Impl>.
-	// On the other hand, there can be child objects which will be destroyed at following GC.
+	// There must be no root objects because they have a shared_ptr<Impl>.
 	SABER_GC_ASSERT(root_objects_.size() == 0);
-
-	collect();
-
-	SABER_GC_ASSERT(storages_.size() == 0);
 }
 
 void GC::Impl::collect()
@@ -146,10 +144,12 @@ void GC::Impl::collect()
 	for (auto&& storage : storages_) {
 		storage.second.unmark(locker);
 	}
+
 	// Mark phase.
 	for (auto&& object : root_objects_) {
 		object.second->second.mark(locker);
 	}
+
 	// Sweep phase.
 	for (auto it = storages_.begin(); it != storages_.end();) {
 		if (it->second.is_marked(locker)) {
@@ -161,9 +161,9 @@ void GC::Impl::collect()
 	}
 }
 
-std::pair<void*, bool> GC::Impl::new_object(const BaseObject* object, const std::size_t bytes, const std::size_t alignment)
+std::pair<void*, bool> GC::Impl::new_object(const BaseObject* object, const std::size_t size, const std::size_t alignment, const std::size_t count)
 {
-	Storage storage{ bytes, alignment, this };
+	Storage storage{ size, alignment, count, this };
 	auto pointer = storage.get_pointer();
 
 	auto locker = lock();
@@ -174,7 +174,7 @@ std::pair<void*, bool> GC::Impl::new_object(const BaseObject* object, const std:
 	return { pointer, add_object(object, emplaced.first, false, locker) };
 }
 
-void GC::Impl::set_destructor(const void* storage, void(*destructor)(void*))
+void GC::Impl::set_destructor(const void* storage, void(*destructor)(void*, const std::size_t))
 {
 	SABER_GC_ASSERT(storage);
 
@@ -263,43 +263,45 @@ bool GC::Impl::add_object(const BaseObject* object, storage_iterator_type iterat
 }
 
 
-GC::Impl::Storage::Storage(const std::size_t bytes, const std::size_t alignment, Impl* impl)
+GC::Impl::Storage::Storage(const std::size_t size, const std::size_t alignment, const std::size_t count, Impl* impl)
 	: pointer_{ nullptr }
-	, bytes_{ bytes }
+	, size_{ size }
 	, alignment_{ alignment }
+	, count_{ count }
 	, impl_{ impl }
 	, child_objects_{ impl->resource_ }
 {
-	SABER_GC_ASSERT(impl);
+	SABER_GC_ASSERT(size % alignment == 0 && count > 0 && impl);
 
 	SABER_GC_TRY {
-		pointer_ = impl->resource_->allocate(bytes, alignment);
+		pointer_ = impl->resource_->allocate(size * count, alignment);
 	}
 	SABER_GC_CATCH_ALL {
 		impl->collect();
-		pointer_ = impl->resource_->allocate(bytes, alignment); // There is no way to handle...
+		pointer_ = impl->resource_->allocate(size * count, alignment); // There is no way to handle...
 	}
 }
 
 GC::Impl::Storage::Storage(Storage&& other) noexcept
 	: pointer_{ other.pointer_ }
-	, bytes_{ other.bytes_ }
+	, size_{ other.size_ }
 	, alignment_{ other.alignment_ }
+	, count_{ other.count_ }
 	, destructor_{ other.destructor_ }
 	, impl_{ other.impl_ }
 	, child_objects_{ std::move(other.child_objects_) }
 	, is_marked_{ other.is_marked_ }
 {
-	other.pointer_ = nullptr; // Preventing from double-freeing.
+	other.pointer_ = nullptr; // Prevents double-freeing.
 }
 
 GC::Impl::Storage::~Storage()
 {
 	if (pointer_) {
 		if (destructor_) {
-			destructor_(pointer_);
+			destructor_(pointer_, count_);
 		}
-		impl_->resource_->deallocate(pointer_, bytes_, alignment_);
+		impl_->resource_->deallocate(pointer_, size_ * count_, alignment_);
 	}
 }
 
@@ -310,10 +312,10 @@ void* GC::Impl::Storage::get_pointer() const noexcept
 
 std::size_t GC::Impl::Storage::get_bytes() const noexcept
 {
-	return bytes_;
+	return size_ * count_;
 }
 
-void GC::Impl::Storage::set_destructor(void(*destructor)(void*), [[maybe_unused]] const std::unique_lock<std::mutex>& locker) noexcept
+void GC::Impl::Storage::set_destructor(void(*destructor)(void*, const std::size_t), [[maybe_unused]] const std::unique_lock<std::mutex>& locker) noexcept
 {
 	SABER_GC_ASSERT(destructor && locker && locker.mutex() == &impl_->mutex_);
 	SABER_GC_ASSERT(!destructor_);
@@ -357,14 +359,16 @@ void GC::Impl::Storage::unmark([[maybe_unused]] const std::unique_lock<std::mute
 
 GC::BaseObject::BaseObject() noexcept
 	: storage_{ nullptr }
+	, count_{ 0 }
 {
 }
 
-GC::BaseObject::BaseObject(const std::shared_ptr<Impl>& impl, const std::size_t bytes, const std::size_t alignment)
+GC::BaseObject::BaseObject(const std::shared_ptr<Impl>& impl, const std::size_t size, const std::size_t alignment, const std::size_t count)
+	: count_{ count }
 {
 	SABER_GC_ASSERT(impl);
 
-	auto result = impl->new_object(this, bytes, alignment);
+	auto result = impl->new_object(this, size, alignment, count > 0 ? count : 1);
 
 	storage_ = result.first;
 
@@ -379,6 +383,7 @@ GC::BaseObject::BaseObject(const std::shared_ptr<Impl>& impl, const std::size_t 
 GC::BaseObject::BaseObject(const BaseObject& other)
 	: storage_{ other.storage_ }
 	, impl_{ other.impl_ }
+	, count_{ other.count_ }
 {
 	if (storage_) {
 		std::visit([this, &other](auto&& impl) {
@@ -433,6 +438,7 @@ GC::BaseObject& GC::BaseObject::operator=(const BaseObject& rhs)
 
 		storage_ = rhs.storage_;
 		impl_ = rhs.impl_;
+		count_ = rhs.count_;
 		Impl* pImpl = nullptr;
 
 		if (storage_) {
@@ -482,7 +488,7 @@ GC::BaseObject& GC::BaseObject::operator=(const BaseObject& rhs)
 	return *this;
 }
 
-void GC::BaseObject::set_destructor(void(*destructor)(void*))
+void GC::BaseObject::set_destructor(void(*destructor)(void*, const std::size_t), const std::size_t count)
 {
 	SABER_GC_ASSERT(destructor);
 
@@ -499,8 +505,8 @@ void GC::BaseObject::set_destructor(void(*destructor)(void*))
 		}, impl_);
 	}
 	SABER_GC_CATCH_ALL {
-		destructor(storage_);
-		throw;
+		destructor(storage_, count > 0 ? count : 1);
+		SABER_GC_RETHROW;
 	}
 }
 
@@ -523,6 +529,7 @@ void GC::BaseObject::reset()
 
 		storage_ = nullptr;
 		impl_ = nullptr;
+		count_ = 0;
 	}
 }
 
