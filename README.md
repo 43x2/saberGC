@@ -11,7 +11,7 @@
 
 ## Requirements
 - C++17 (clang, MSVC, gcc, etc.)
-	- e.g. `memory_resource`, `polymorphic_allocator`, `variant`, `[[maybe_unused]]`
+	- Uses `memory_resource`, `polymorphic_allocator`, `variant`, `[[maybe_unused]]`, ...
 
 ## Usage
 ```cpp
@@ -32,5 +32,8 @@ int main()
 ```
 
 ## ToDos
-- Copy construction/assignment support from `Object<Derived>`.
-- Benchmarking.
+- [x] ~~Array type construction support.~~
+- [x] ~~Exception safety support.~~
+- [x] ~~Copy construction/assignment support from `Object<Derived>`.~~
+- [ ] Benchmarking.
+- [ ] Move semantics support. (But no plans as of now)

@@ -31,18 +31,31 @@ private:
 };
 #endif // defined(USE_MEMORY_RESOURCE)
 
-struct Foo
+struct Base
 {
-	saber::GC::Object<Foo> foo_;
+	saber::GC::Object<Base> base_;
 
-	Foo()
+	Base()
 	{
-		std::cout << "Foo\n";
+		std::cerr << "Base\n";
 	}
 
-	~Foo()
+	~Base()
 	{
-		std::cout << "~Foo\n";
+		std::cerr << "~Base\n";
+	}
+};
+
+struct Derived : Base
+{
+	Derived()
+	{
+		std::cerr << "Derived\n";
+	}
+
+	~Derived()
+	{
+		std::cerr << "~Derived\n";
 	}
 };
 
@@ -56,8 +69,9 @@ int main()
 	saber::GC gc;
 #endif // defined(USE_MEMORY_RESOURCE)
 
-	auto foo = gc.new_object<Foo>();
-	foo->foo_ = foo; // It's a cyclic reference, but no problem.
+	auto derived = gc.new_object<Derived>();
+	saber::GC::Object<Base> base = derived;
+	base->base_ = derived; // It's a cyclic reference, but no problem.
 
 	return 0;
 } // saber::GC collects garbages implicitly when destroyed.

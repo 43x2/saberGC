@@ -81,7 +81,7 @@ workspace("saberGC")
 		kind("ConsoleApp")
 		targetdir("../bin")
 		targetsuffix("_" .. _ACTION .. "_%{cfg.platform}_%{cfg.buildcfg}")
-		objdir("../.intermediate." .. _ACTION .. "/%{prj.name}")
+		objdir(".intermediate." .. _ACTION .. "/%{prj.name}")
 
 		includedirs({
 			"../saberGC/include",

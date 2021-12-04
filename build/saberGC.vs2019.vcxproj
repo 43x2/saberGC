@@ -97,42 +97,42 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
     <OutDir>..\bin\</OutDir>
-    <IntDir>..\.intermediate.vs2019\saberGC\x86\Debug\</IntDir>
+    <IntDir>.intermediate.vs2019\saberGC\x86\Debug\</IntDir>
     <TargetName>saberGC_vs2019_x86_Debug</TargetName>
     <TargetExt>.exe</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
     <OutDir>..\bin\</OutDir>
-    <IntDir>..\.intermediate.vs2019\saberGC\x64\Debug\</IntDir>
+    <IntDir>.intermediate.vs2019\saberGC\x64\Debug\</IntDir>
     <TargetName>saberGC_vs2019_x64_Debug</TargetName>
     <TargetExt>.exe</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Develop|Win32'">
     <LinkIncremental>false</LinkIncremental>
     <OutDir>..\bin\</OutDir>
-    <IntDir>..\.intermediate.vs2019\saberGC\x86\Develop\</IntDir>
+    <IntDir>.intermediate.vs2019\saberGC\x86\Develop\</IntDir>
     <TargetName>saberGC_vs2019_x86_Develop</TargetName>
     <TargetExt>.exe</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Develop|x64'">
     <LinkIncremental>false</LinkIncremental>
     <OutDir>..\bin\</OutDir>
-    <IntDir>..\.intermediate.vs2019\saberGC\x64\Develop\</IntDir>
+    <IntDir>.intermediate.vs2019\saberGC\x64\Develop\</IntDir>
     <TargetName>saberGC_vs2019_x64_Develop</TargetName>
     <TargetExt>.exe</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
     <OutDir>..\bin\</OutDir>
-    <IntDir>..\.intermediate.vs2019\saberGC\x86\Release\</IntDir>
+    <IntDir>.intermediate.vs2019\saberGC\x86\Release\</IntDir>
     <TargetName>saberGC_vs2019_x86_Release</TargetName>
     <TargetExt>.exe</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
     <OutDir>..\bin\</OutDir>
-    <IntDir>..\.intermediate.vs2019\saberGC\x64\Release\</IntDir>
+    <IntDir>.intermediate.vs2019\saberGC\x64\Release\</IntDir>
     <TargetName>saberGC_vs2019_x64_Release</TargetName>
     <TargetExt>.exe</TargetExt>
   </PropertyGroup>
@@ -270,8 +270,8 @@
     <ClCompile Include="..\saberGC\src\GC.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\saberGC\check.cpp_" />
     <None Include="..\saberGC\stress.cpp_" />
-    <None Include="..\saberGC\test.cpp_" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="..\saberGC\saberGC.natvis" />

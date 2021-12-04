@@ -46,6 +46,20 @@ struct Foo
 	}
 };
 
+struct DerivedFromFoo : Foo
+{
+	DerivedFromFoo()
+		: Foo{}
+	{
+		std::cout << "DerivedFromFoo\n";
+	}
+
+	~DerivedFromFoo()
+	{
+		std::cout << "~DerivedFromFoo\n";
+	}
+};
+
 
 int main()
 {
@@ -137,5 +151,9 @@ int main()
 	auto foo = gc.new_object<Foo>();
 	foo->foo_ = foo; // It's a cyclic reference, but no problem.
 
+	saber::GC::Object<Foo> f1 = gc.new_object<DerivedFromFoo>();
+	auto f2 = gc.new_object<DerivedFromFoo>();
+	f1 = f2;
+
 	return 0;
-} // saber::GC collects garbages implicitly when destroyed.
+}

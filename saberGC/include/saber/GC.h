@@ -104,6 +104,23 @@ public:
 	~Object() = default;
 	Object& operator=(const Object&) = default;
 
+	// Constructs from an other type object.
+	template <class U, class = std::enable_if_t<std::is_convertible_v<U*, T*>>>
+	Object(const Object<U>& other)
+		: BaseObject{ other }
+	{
+		storage_ = static_cast<element_type*>(other.get());
+	}
+
+	// Assigns from an other type object.
+	template <class U, class = std::enable_if_t<std::is_convertible_v<U*, T*>>>
+	Object& operator=(const Object<U>& rhs)
+	{
+		BaseObject::operator=(rhs);
+		storage_ = static_cast<element_type*>(rhs.get());
+		return *this;
+	}
+
 	// Returns the pointer of storage.
 	element_type* get() const noexcept
 	{
